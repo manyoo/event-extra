@@ -110,7 +110,7 @@ withLast d = step def evt
                     pure { last: Nothing, now: v }
           evt = makeEvent \k -> subscribe (dynEvent d) \v -> do
                     ov <- current d
-                    pure { last: Just ov, now: v }
+                    k { last: Just ov, now: v }
 
 sampleDyn :: forall a b. Dynamic a -> Event (a -> b) -> Event b
 sampleDyn d evt = makeEvent \k -> subscribe evt \f -> current d >>= f >>> k
