@@ -112,8 +112,12 @@ withLast d = step def evt
                     ov <- current d
                     pure { last: Just ov, now: v }
 
-sampleDyn :: forall a b. Dynamic a -> Event b -> Event a
-sampleDyn d evt = makeEvent \k -> subscribe evt \_ -> current d >>= k
+sampleDyn :: forall a b. Dynamic a -> Event (a -> b) -> Event b
+sampleDyn d evt = makeEvent \k -> subscribe evt \f -> current d >>= f >>> k
+
+sampleDyn_ :: forall a b. Dynamic a -> Event b -> Event a
+sampleDyn_ d evt = sampleDyn d (f <$> evt)
+    where f _ a = a
 
 gateDyn :: forall a. Dynamic Boolean -> Event a -> Event a
 gateDyn d e = makeEvent \k -> subscribe e \v -> do
