@@ -3,12 +3,17 @@ module FRP.Dynamic where
 import Prelude
 
 import Control.Plus (empty)
+import Data.Array (updateAt)
+import Data.Maybe (fromMaybe)
+import Data.Traversable (sequence_, traverse)
+import Data.TraversableWithIndex (traverseWithIndex)
 import Effect (Effect)
+import Effect.Class.Console (logShow)
 import Effect.Ref (Ref, new, read, write)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (Event, makeEvent, subscribe)
 import FRP.Event as Event
-import FRP.Event.Extra (performEvent)
+import FRP.Event.Extra (debugWith, performEvent)
 
 newtype Dynamic a = Dynamic {
     event   :: Event a,
@@ -86,6 +91,18 @@ mergeWith f a b = Dynamic { event: evt, current: def }
                               k c
                     pure $ d1 *> d2
 
+mergeDynArray :: forall a. Array (Dynamic a) -> Dynamic (Array a)
+mergeDynArray arr = Dynamic { event: evt, current: def }
+    where def = unsafePerformEffect $ traverse current arr >>= new
+          evt = makeEvent \k -> do
+                    let newValFunc i val = do
+                            old <- read def
+                            let new = fromMaybe old $ updateAt i val old
+                            write new def
+                            k new
+                    ds <- traverseWithIndex (\i d -> subscribe (dynEvent d) (newValFunc i)) arr
+                    pure $ sequence_ ds
+
 sampleDyn :: forall a b. Dynamic a -> Event b -> Event a
 sampleDyn d evt = makeEvent \k -> subscribe evt \_ -> current d >>= k
 
@@ -93,3 +110,13 @@ gateDyn :: forall a. Dynamic Boolean -> Event a -> Event a
 gateDyn d e = makeEvent \k -> subscribe e \v -> do
                   gv <- current d
                   when gv (k v)
+
+debugDyn :: forall a. Show a => Dynamic a -> Dynamic a
+debugDyn = debugDynWith logShow
+
+debugDynWith :: forall a. (a -> Effect Unit) -> Dynamic a -> Dynamic a
+debugDynWith f d = step def (debugWith f $ dynEvent d)
+    where def = unsafePerformEffect do
+                    v <- current d
+                    f v
+                    pure v
