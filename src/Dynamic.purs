@@ -4,10 +4,10 @@ import Prelude
 
 import Control.Plus (empty)
 import Effect (Effect)
-import Effect.Ref (Ref, new, read)
-import Effect.Ref as Ref
+import Effect.Ref (Ref, new, read, write)
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, subscribe)
+import FRP.Event (Event, makeEvent, subscribe)
+import FRP.Event as Event
 import FRP.Event.Extra (performEvent)
 
 newtype Dynamic a = Dynamic {
@@ -15,59 +15,81 @@ newtype Dynamic a = Dynamic {
     current :: Ref a
 }
 
-instance functorDynamic :: Functor Dynamic where
-    map f (Dynamic { event, current }) = Dynamic {
-        event   : f <$> event,
-        current : unsafePerformEffect do
-                    v <- read current
-                    new $ f v
-    }
+dynEvent :: forall a. Dynamic a -> Event a
+dynEvent (Dynamic d) = d.event
 
-instance applyDynamic :: Apply Dynamic where
-    apply (Dynamic f) (Dynamic d) = Dynamic {
-        event   : apply f.event d.event,
-        current : unsafePerformEffect do
-                    func <- read f.current
-                    v <- read d.current
-                    new $ func v
-    }
+current :: forall a. Dynamic a -> Effect a
+current (Dynamic d) = read d.current
 
-instance applicativeDynamic :: Applicative Dynamic where
-    pure a = Dynamic { event: empty, current: unsafePerformEffect (new a) }
-
-instance semigroupDynamic :: Semigroup a => Semigroup (Dynamic a) where
-    append (Dynamic d1) (Dynamic d2) = Dynamic {
-        event   : append d1.event d2.event,
-        current : unsafePerformEffect do
-                    v1 <- read d1.current
-                    v2 <- read d2.current
-                    new $ append v1 v2
-    }
-
-instance monoidDynamic :: Monoid a  => Monoid (Dynamic a) where
-    mempty = Dynamic { event: mempty, current: unsafePerformEffect (new mempty) }
-
+-- internal function to create a new event from old event and save all values
+-- fired in the event into the Ref value
+mkNewEvt :: forall a. Ref a -> Event a -> Event a
+mkNewEvt ref evt = makeEvent \k -> subscribe evt \v -> write v ref *> k v
 
 step :: forall a. a -> Event a -> Dynamic a
-step def evt = Dynamic { event: evt, current: unsafePerformEffect (Ref.new def) }
+step def evt = Dynamic { event: mkNewEvt cur evt, current: cur }
+    where cur = unsafePerformEffect $ new def
 
-dynEvent :: forall a. Dynamic a -> Event a
-dynEvent (Dynamic { event }) = event
+instance functorDynamic :: Functor Dynamic where
+    map f d = step def (f <$> dynEvent d)
+        where def = f $ unsafePerformEffect $ current d
 
-dynCurrent :: forall a. Dynamic a -> Effect a
-dynCurrent (Dynamic { current }) = read current
+instance applyDynamic :: Apply Dynamic where
+    apply = mergeWith (\f v -> f v)
 
-performDynamic :: forall a. Dynamic (Effect a) -> Dynamic a
-performDynamic (Dynamic { event, current }) = Dynamic {
-    event   : performEvent event,
-    current : unsafePerformEffect do
-                v <- read current
-                res <- v
-                new res
-}
+instance applicativeDynamic :: Applicative Dynamic where
+    pure a = step a empty
+
+instance semigroupDynamic :: Semigroup a => Semigroup (Dynamic a) where
+    append = mergeWith append
+
+instance monoidDynamic :: Monoid a => Monoid (Dynamic a) where
+    mempty = step mempty mempty
+
 
 subscribeDyn :: forall a r. Dynamic a -> (a -> Effect r) -> Effect (Effect Unit)
-subscribeDyn d f = do
-    cur <- dynCurrent d
-    _ <- f cur
-    subscribe (dynEvent d) f
+subscribeDyn d func = do
+    v <- current d
+    _ <- func v
+    subscribe (dynEvent d) func
+
+performDynamic :: forall a. Dynamic (Effect a) -> Dynamic a
+performDynamic d = step def (performEvent $ dynEvent d)
+    where def = unsafePerformEffect $ current d >>= identity
+
+fold :: forall a b. (a -> b -> b) -> Dynamic a -> b -> Dynamic b
+fold f d v = step def (Event.fold f (dynEvent d) def)
+    where def = f (unsafePerformEffect $ current d) v
+
+keepLatest :: forall a. Dynamic (Dynamic a) -> Dynamic a
+keepLatest d = step def (Event.keepLatest (dynEvent <$> dynEvent d))
+    where def = unsafePerformEffect do
+                    v <- current =<< current d
+                    pure v
+
+mergeWith :: forall a b c. (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
+mergeWith f a b = Dynamic { event: evt, current: def }
+    where def = unsafePerformEffect do
+                    va <- current a
+                    vb <- current b
+                    new $ f va vb
+          evt = makeEvent \k -> do
+                    d1 <- subscribe (dynEvent a) \v -> do
+                              vb <- current b
+                              let c = f v vb
+                              write c def
+                              k c
+                    d2 <- subscribe (dynEvent b) \v -> do
+                              va <- current a
+                              let c = f va v
+                              write c def
+                              k c
+                    pure $ d1 *> d2
+
+sampleDyn :: forall a b. Dynamic a -> Event b -> Event a
+sampleDyn d evt = makeEvent \k -> subscribe evt \_ -> current d >>= k
+
+gateDyn :: forall a. Dynamic Boolean -> Event a -> Event a
+gateDyn d e = makeEvent \k -> subscribe e \v -> do
+                  gv <- current d
+                  when gv (k v)
