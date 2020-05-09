@@ -4,7 +4,7 @@ import Prelude
 
 import Control.Plus (empty)
 import Data.Array (updateAt)
-import Data.Maybe (fromMaybe)
+import Data.Maybe (Maybe(..), fromMaybe)
 import Data.Traversable (sequence_, traverse)
 import Data.TraversableWithIndex (traverseWithIndex)
 import Effect (Effect)
@@ -29,7 +29,7 @@ current (Dynamic d) = read d.current
 -- internal function to create a new event from old event and save all values
 -- fired in the event into the Ref value
 mkNewEvt :: forall a. Ref a -> Event a -> Event a
-mkNewEvt ref evt = makeEvent \k -> subscribe evt \v -> write v ref *> k v
+mkNewEvt ref evt = makeEvent \k -> subscribe evt \v -> k v *> write v ref
 
 step :: forall a. a -> Event a -> Dynamic a
 step def evt = Dynamic { event: mkNewEvt cur evt, current: cur }
@@ -82,13 +82,13 @@ mergeWith f a b = Dynamic { event: evt, current: def }
                     d1 <- subscribe (dynEvent a) \v -> do
                               vb <- current b
                               let c = f v vb
-                              write c def
                               k c
+                              write c def
                     d2 <- subscribe (dynEvent b) \v -> do
                               va <- current a
                               let c = f va v
-                              write c def
                               k c
+                              write c def
                     pure $ d1 *> d2
 
 mergeDynArray :: forall a. Array (Dynamic a) -> Dynamic (Array a)
@@ -98,10 +98,19 @@ mergeDynArray arr = Dynamic { event: evt, current: def }
                     let newValFunc i val = do
                             old <- read def
                             let new = fromMaybe old $ updateAt i val old
-                            write new def
                             k new
+                            write new def
                     ds <- traverseWithIndex (\i d -> subscribe (dynEvent d) (newValFunc i)) arr
                     pure $ sequence_ ds
+
+withLast :: forall a. Dynamic a -> Dynamic { last :: Maybe a, now :: a }
+withLast d = step def evt
+    where def = unsafePerformEffect do
+                    v <- current d
+                    pure { last: Nothing, now: v }
+          evt = makeEvent \k -> subscribe (dynEvent d) \v -> do
+                    ov <- current d
+                    pure { last: Just ov, now: v }
 
 sampleDyn :: forall a b. Dynamic a -> Event b -> Event a
 sampleDyn d evt = makeEvent \k -> subscribe evt \_ -> current d >>= k
