@@ -2,10 +2,10 @@ module FRP.Event.Extra where
 
 import Prelude
 
-import Data.Array (all, length, replicate, updateAt)
+import Data.Array (all, deleteBy, length, null, replicate, updateAt)
 import Data.DateTime.Instant (Instant)
 import Data.Filterable (filter)
-import Data.Foldable (sequence_)
+import Data.Foldable (sequence_, traverse_)
 import Data.Int (fromNumber)
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust)
 import Data.Time.Duration (Milliseconds(..))
@@ -16,8 +16,9 @@ import Effect.Now (now)
 import Effect.Ref as Ref
 import Effect.Timer (clearTimeout, setTimeout)
 import Effect.Unsafe (unsafePerformEffect)
-import FRP.Event (Event, create, makeEvent, subscribe, withLast)
+import FRP.Event (Event, makeEvent, subscribe, withLast)
 import Partial.Unsafe (unsafePartial)
+import Unsafe.Reference (unsafeRefEq)
 
 
 -- | create an Event that will fire in n milliseconds
@@ -107,9 +108,15 @@ foldEffect act e b = makeEvent \k -> do
 
 multicast :: forall a. Event a -> Event a
 multicast evt = unsafePerformEffect $ do
-    { event: newEvt, push: p } <- create
-    dispose <- subscribe evt p
-    pure newEvt
+    subscribers <- Ref.new []
+    dispose <- subscribe evt \a -> Ref.read subscribers >>= traverse_ \k -> k a
+    pure $ makeEvent \k -> do
+            _ <- Ref.modify (_ <> [k]) subscribers
+            pure do -- dispose
+                newSubscribers <- Ref.modify (deleteBy unsafeRefEq k) subscribers
+                -- dispose the subscription to upstream event when all subscribers
+                -- are diposed.
+                when (null newSubscribers) dispose
 
 debug :: forall a. Show a => Event a -> Event a
 debug evt = performEvent $ f <$> evt
