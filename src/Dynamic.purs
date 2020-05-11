@@ -13,7 +13,7 @@ import Effect.Ref (Ref, new, read, write)
 import Effect.Unsafe (unsafePerformEffect)
 import FRP.Event (Event, makeEvent, subscribe)
 import FRP.Event as Event
-import FRP.Event.Extra (debugWith, performEvent)
+import FRP.Event.Extra (debugWith, multicast, performEvent)
 
 newtype Dynamic a = Dynamic {
     event   :: Event a,
@@ -29,7 +29,7 @@ current (Dynamic d) = read d.current
 -- internal function to create a new event from old event and save all values
 -- fired in the event into the Ref value
 mkNewEvt :: forall a. Ref a -> Event a -> Event a
-mkNewEvt ref evt = makeEvent \k -> subscribe evt \v -> k v *> write v ref
+mkNewEvt ref evt = multicast $ makeEvent \k -> subscribe evt \v -> k v *> write v ref
 
 step :: forall a. a -> Event a -> Dynamic a
 step def evt = Dynamic { event: mkNewEvt cur evt, current: cur }
@@ -78,7 +78,7 @@ mergeWith f a b = Dynamic { event: evt, current: def }
                     va <- current a
                     vb <- current b
                     new $ f va vb
-          evt = makeEvent \k -> do
+          evt = multicast $ makeEvent \k -> do
                     d1 <- subscribe (dynEvent a) \v -> do
                               vb <- current b
                               let c = f v vb
@@ -94,7 +94,7 @@ mergeWith f a b = Dynamic { event: evt, current: def }
 mergeDynArray :: forall a. Array (Dynamic a) -> Dynamic (Array a)
 mergeDynArray arr = Dynamic { event: evt, current: def }
     where def = unsafePerformEffect $ traverse current arr >>= new
-          evt = makeEvent \k -> do
+          evt = multicast $ makeEvent \k -> do
                     let newValFunc i val = do
                             old <- read def
                             let new = fromMaybe old $ updateAt i val old
