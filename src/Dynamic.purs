@@ -113,16 +113,25 @@ withLast d = step def evt
                     k { last: Just ov, now: v }
 
 sampleDyn :: forall a b. Dynamic a -> Event (a -> b) -> Event b
-sampleDyn d evt = makeEvent \k -> subscribe evt \f -> current d >>= f >>> k
+sampleDyn d evt = makeEvent \k -> do
+                    -- subscribe to the dynamic value to make sure
+                    -- it's always updated and we can get the 'current' value
+                    -- correctly when sampling.
+                    d0 <- subscribeDyn d (const $ pure unit)
+                    d1 <- subscribe evt \f -> current d >>= f >>> k
+                    pure $ d0 *> d1
 
 sampleDyn_ :: forall a b. Dynamic a -> Event b -> Event a
 sampleDyn_ d evt = sampleDyn d (f <$> evt)
     where f _ a = a
 
 gateDyn :: forall a. Dynamic Boolean -> Event a -> Event a
-gateDyn d e = makeEvent \k -> subscribe e \v -> do
+gateDyn d e = makeEvent \k -> do
+                d0 <- subscribeDyn d (const $ pure unit)
+                d1 <- subscribe e \v -> do
                   gv <- current d
                   when gv (k v)
+                pure $ d0 *> d1
 
 debugDyn :: forall a. Show a => Dynamic a -> Dynamic a
 debugDyn = debugDynWith logShow
