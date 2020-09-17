@@ -2,10 +2,12 @@ module FRP.Event.Extra where
 
 import Prelude
 
+import Control.Alt ((<|>))
+import Control.Plus (empty)
 import Data.Array (all, deleteBy, length, null, replicate, updateAt)
 import Data.DateTime.Instant (Instant)
 import Data.Filterable (filter)
-import Data.Foldable (class Foldable, sequence_, traverse_)
+import Data.Foldable (class Foldable, foldlDefault, sequence_, traverse_)
 import Data.Int (fromNumber)
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust)
 import Data.Time.Duration (Milliseconds(..))
@@ -63,6 +65,9 @@ distinct evt = getNow <$> filter isDiff (withLast evt)
     where isDiff { last, now } = last == Just now
           getNow { now } = now
 
+-- | combine a foldable list of events into one event.
+anyEvt :: forall a f. Foldable f => f (Event a) -> Event a
+anyEvt = foldlDefault (<|>) empty
 
 -- | this is the similar to the 'fold' function in FRP.Event.
 -- But this function will send the default value as well.
