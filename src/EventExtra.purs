@@ -5,7 +5,7 @@ import Prelude
 import Data.Array (all, deleteBy, length, null, replicate, updateAt)
 import Data.DateTime.Instant (Instant)
 import Data.Filterable (filter)
-import Data.Foldable (sequence_, traverse_)
+import Data.Foldable (class Foldable, sequence_, traverse_)
 import Data.Int (fromNumber)
 import Data.Maybe (Maybe(..), fromJust, fromMaybe, isJust)
 import Data.Time.Duration (Milliseconds(..))
@@ -117,6 +117,10 @@ multicast evt = unsafePerformEffect $ do
                 -- dispose the subscription to upstream event when all subscribers
                 -- are diposed.
                 when (null newSubscribers) dispose
+
+-- unfold an event of a list of values to a new event with all single values in it
+fromFoldableE :: forall a f. Foldable f => Event (f a) -> Event a
+fromFoldableE e = makeEvent \k -> subscribe e \v -> traverse_ k v
 
 debug :: forall a. Show a => Event a -> Event a
 debug evt = performEvent $ f <$> evt

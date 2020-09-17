@@ -133,6 +133,12 @@ gateDyn d e = makeEvent \k -> do
                   when gv (k v)
                 pure $ d0 *> d1
 
+
+-- get latest inner Event in a Dynamic Event value
+-- TODO: dispose the inner subscription
+latestEvt :: forall a. Dynamic (Event a) -> Event a
+latestEvt d = makeEvent \k -> subscribeDyn d (flip subscribe k)
+
 debugDyn :: forall a. Show a => Dynamic a -> Dynamic a
 debugDyn = debugDynWith logShow
 
