@@ -58,6 +58,10 @@ subscribeDyn d func = do
     _ <- func v
     subscribe (dynEvent d) func
 
+multicastDyn :: forall a. Dynamic a -> Dynamic a
+multicastDyn d = step def $ multicast $ dynEvent d
+    where def = unsafePerformEffect $ current d
+
 performDynamic :: forall a. Dynamic (Effect a) -> Dynamic a
 performDynamic d = step def (performEvent $ dynEvent d)
     where def = unsafePerformEffect $ current d >>= identity
