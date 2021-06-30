@@ -76,6 +76,13 @@ keepLatest d = step def (Event.keepLatest (dynEvent <$> dynEvent d))
                     v <- current =<< current d
                     pure v
 
+distinctDyn :: forall a. Eq a => Dynamic a -> Dynamic a
+distinctDyn d = step def e
+    where def = unsafePerformEffect $ current d
+          e = makeEvent \k -> subscribe (dynEvent d) \v -> do
+                  o <- current d
+                  when (v /= o) (k v)
+
 mergeWith :: forall a b c. (a -> b -> c) -> Dynamic a -> Dynamic b -> Dynamic c
 mergeWith f a b = Dynamic { event: evt, current: def }
     where def = unsafePerformEffect do
