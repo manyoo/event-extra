@@ -116,13 +116,17 @@ let additions =
   }
 -------------------------------
 -}
-
-
 let upstream =
-      https://github.com/purescript/package-sets/releases/download/psc-0.13.6-20200404/packages.dhall sha256:f239f2e215d0cbd5c203307701748581938f74c4c78f4aeffa32c11c131ef7b6
+      https://github.com/purescript/package-sets/releases/download/psc-0.14.3-20210825/packages.dhall sha256:eee0765aa98e0da8fc414768870ad588e7cada060f9f7c23c37385c169f74d9f
 
 let overrides = {=}
 
-let additions = {=}
+let additions = {
+    event =
+        { dependencies = [ "prelude", "filterable" ]
+        , repo = "https://github.com/mikesol/purescript-event.git" -- use a forked version that supports purs 0.14
+        , version = "932381bb71093acfc4d46ce38513ee759af0588b"
+        }
+}
 
 in  upstream // overrides // additions
